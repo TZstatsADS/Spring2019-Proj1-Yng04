@@ -24,6 +24,5 @@ proj/
 ├── figs/
 └── output/
 ```
-### [Project Report](doc/Gender Differences Analysis on Happy Moments.html)
-### [Project Code](doc/Gender Differences Analysis on Happy Moments.rmd)
+
 Please see each subfolder for a README file.
