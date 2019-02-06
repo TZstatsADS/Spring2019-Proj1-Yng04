@@ -1,0 +1,204 @@
+---
+title: "Gender Differences on Happy Moments Analysis"
+author: "Ying Jin"
+output:
+  html_document:
+    df_print: paged
+---
+
+What makes us happy? A beautiful scene, a joyful date, hang out with friends... Thousands of answers will show up due to different timing and different people. As known to us, male and female have differences on their ways of thinking and expressing. Hence, naturally, we think that on happy moments, gender may result to some differences as well.  A survey collected a corpus of 100,000+ crowd-sourced happy moments to study those causes. Let's use this survey dataset to find out if this thought is true.
+
+```{r, echo=FALSE, message=FALSE}
+# Loading required packages
+library(tm)
+library(wordcloud)
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(topicmodels)
+library(gridExtra)
+
+#Import the original data and the topic dictionary
+moments <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/output/processed_moments.csv")
+demographic <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/demographic.csv")
+dict_entertainment <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/entertainment-dict.csv", header = F)
+dict_exercise <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/exercise-dict.csv", header = F)
+dict_family <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/family-dict.csv", header = F)
+dict_food <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/food-dict.csv", header = F)
+dict_people <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/people-dict.csv", header = F)
+dict_pets <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/pets-dict.csv", header = F)
+dict_school <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/school-dict.csv", header = F)
+dict_shopping <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/shopping-dict.csv", header = F)
+dict_work <- read.csv("~/Documents/GitHub/Spring2019-Proj1-Yng04/data/topic_dict/work-dict.csv", header = F)
+
+# Create the dictionary including all topics
+ref <- data.frame(entertainment = rep(NA,633), exercise = rep(NA,633), family = rep(NA,633), food =rep(NA,633), people = rep(NA,633), pets = rep(NA,633), school = rep(NA,633), shopping = rep(NA,633), work = rep(NA,633))
+ref$entertainment[1:nrow(dict_entertainment)] <- as.character(dict_entertainment$V1)
+ref$exercise[1:nrow(dict_exercise)] <- as.character(dict_exercise$V1)
+ref$family[1:nrow(dict_family)] <- as.character(dict_family$V1)
+ref$food[1:nrow(dict_food)] <- as.character(dict_food$V1)
+ref$people[1:nrow(dict_people)] <- as.character(dict_people$V1)
+ref$pets[1:nrow(dict_pets)] <- as.character(dict_pets$V1)
+ref$school[1:nrow(dict_school)] <- as.character(dict_school$V1)
+ref$shopping[1:nrow(dict_shopping)] <- as.character(dict_shopping$V1)
+ref$work[1:nrow(dict_work)] <- as.character(dict_work$V1)
+
+# Add gender to the data with text
+male <- filter(demographic,gender == "m")
+female <- filter(demographic,gender == "f")
+maledata <- filter(moments,moments$wid %in% male$wid)
+femaledata <- filter(moments,moments$wid %in% female$wid)
+maledata$gender <- "male"
+femaledata$gender <- "female"
+df <- rbind(maledata, femaledata) 
+```
+
+## I. EDA(Exploratory Data Analysis)
+
+In the research, gender is divided into three parts: female(f), male(m) and other(o). From the distribution shown in the pie graph, we can see that other is a quite small portion. Thus, we focus on information related to female and male, based on which exploratory data analysis are done, indicating some interesting things. For some general analysis, this part will cover analysis on length and number of the sentences, category and overall words frequency. 
+
+```{r, echo=FALSE}
+
+c <- fct_count(demographic$gender)
+pie(c$n, labels = c$f , main = "Gender Distribution")
+
+```
+
+### Are female and male different on expressing happy moments?
+
+According to the density histogram and density curves shown below, we can see that men and women seem to have no preference on number of sentences while men tend to use slightly shorter sentences than women do, indicating that women may be more expressive. 
+
+```{r, echo=FALSE, warning=FALSE}
+
+num <- df  %>% group_by(wid) %>% mutate(num = mean(num_sentence)) 
+non <- num[!duplicated(num$wid),]
+plot1 <- ggplot()  + geom_histogram(data = non,aes(num, ..density..,fill = gender), color = "white", binwidth = 0.35)+ geom_density(data = non,aes(num, ..density..,col = gender)) + xlim(0,10) + ggtitle("Number of Sentences Density Histogram")
+
+t_m <- strsplit(as.character(maledata$text)," ")
+nword_m <- sapply(t_m, length)
+t_f <- strsplit(as.character(femaledata$text)," ")
+nword_f <- sapply(t_f, length)
+combine_f <- data.frame(nword = nword_f,gender = rep("female", length(nword_f))) 
+combine_m <- data.frame(nword = nword_m,gender = rep("male", length(nword_m))) 
+combine <- rbind(combine_f,combine_m)
+
+plot2 <- ggplot()  + geom_density(data = combine,aes(nword, ..density..,col = gender)) + xlim(0,30)+ ggtitle("Length of Sentences(number of words) Density Curve")
+grid.arrange(plot1, plot2, nrow = 2, ncol = 1)
+```
+
+### Are female and male different on happy categories?
+
+Clearly shown in the bar graph, women's favourite happy category is affection and man's is achievement. Besides, on leisure, exercise, enjoy_the_moment and bonding, men may more easily feel happy. There is no difference on nature. It tells us that female are more happily sensitive to affection around while male to achievement, revealing that women are more subjective.
+```{r, echo=FALSE}
+ggplot(df, aes(predicted_category, fill = gender)) + geom_bar() + ggtitle("Predicted Category Distribution Bar Graph") +coord_flip() 
+```
+
+
+### Are female and male different on happy words?
+After analyzing the happy categories, we want to know specific words shown most frequently for both sides. From two wordclouds below, we can see that "friend", "time" and "day" are the most popular words in happy moments for both sides. Friends mean a lot to both male and female. But there is a difference on the other words around. We can clearly see "husband", "daughter", "son" and some family related words shown clearly in female's cloudword. However, in male's wordcloud, those words are relatively small and faily equal to the entertaining words, like "play", "watch". Women's happy moments are more related to family.
+
+#### Female
+```{r, echo=FALSE}
+corpus_f <- VCorpus(VectorSource(femaledata$text))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(stripWhitespace)
+tdm.all_f<-TermDocumentMatrix(corpus_f)
+tdm.tidy_f <- tidy(tdm.all_f)
+tdm.overall_f <- summarise(group_by(tdm.tidy_f, term), sum(count))
+wordcloud(tdm.overall_f$term, tdm.overall_f$`sum(count)`,
+          scale=c(4,0.5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+```
+
+#### Male
+```{r, echo=FALSE}
+corpus_m <- VCorpus(VectorSource(maledata$text))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(stripWhitespace)
+tdm.all_m<-TermDocumentMatrix(corpus_m)
+tdm.tidy_m <- tidy(tdm.all_m)
+tdm.overall_m <- summarise(group_by(tdm.tidy_m, term), sum(count))
+wordcloud(tdm.overall_m$term, tdm.overall_m$`sum(count)`,
+          scale=c(4,0.5),
+          max.words=100,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+
+```
+
+## II. Topic Analysis
+In this part, we analyze topic differences in two group, including LDA (automatically selecting 3 topics according to similar word parts) and manually selected 9 topics analysis. 
+
+### LDA Model
+First, according to the words' similarity, we use LDA to roughly generated 3 estimated topics and visualize 10 top words for each topic. From the figure below, we can roughly conclude that 3 major topics are "entertainment","family" and "work". It seemed the for men, entertainment is more obvious. 
+
+```{r, echo=FALSE}
+male.data <- maledata  %>% group_by(wid) %>% summarise(text = paste(text, collapse = " "))
+m_lda <- LDA(DocumentTermMatrix(Corpus(VectorSource(male.data$text))), k = 3, control = list(seed = 1500))
+m_lda_td <- tidy(m_lda)
+m_top_terms <- m_lda_td %>% group_by(topic) %>% top_n(10, beta) %>% ungroup() %>% arrange(topic, -beta)
+
+plot_1 <- m_top_terms %>%mutate(term = reorder(term, beta)) %>% ggplot(aes(term, beta, fill = factor(topic))) +geom_bar(stat = "identity", show.legend = FALSE) +facet_wrap(~ topic, scales = "free") +coord_flip() + ggtitle("Top 10 Words for Each Estimated Topic (Male)")
+
+
+female.data <- femaledata  %>% group_by(wid) %>% summarise(text = paste(text, collapse = " "))
+f_lda <- LDA(DocumentTermMatrix(Corpus(VectorSource(female.data$text))), k = 3, control = list(seed = 1500))
+f_lda_td <- tidy(f_lda)
+f_top_terms <- f_lda_td %>% group_by(topic) %>% top_n(10, beta) %>% ungroup() %>% arrange(topic, -beta)
+
+plot_2 <- f_top_terms %>%mutate(term = reorder(term, beta)) %>% ggplot( aes(term, beta, fill = factor(topic))) +geom_bar(stat = "identity", show.legend = FALSE) +facet_wrap(~ topic, scales = "free") +coord_flip() + ggtitle("Top 10 Words for Each Estimated Topic (Female)")
+
+grid.arrange(plot_2, plot_1, nrow = 2, ncol = 1)
+```
+
+
+
+### 9 selected Topics
+
+Besides 3 roughly estimated topic, according to the research, we manully divide topics into 9 parts: entertainment, exercise, family, food, people, pets, school, shopping and work. Then let's see what happened.
+
+####Female
+```{r, echo=FALSE,warning=FALSE}
+
+graph_m <- function(x){
+   filter_words_m <- tdm.tidy_m %>% filter(tdm.tidy_m$term %in% ref[,x])
+ filter_words_m %>% count(term, sort = T) %>% top_n(5) %>% ungroup() %>% mutate( term = reorder(term,n)) %>% ggplot() + geom_col(aes(term, n), fill = " light blue") + coord_flip()
+}
+
+graph_f <- function(x){
+   filter_words_f <- tdm.tidy_f %>% filter(tdm.tidy_f$term %in% ref[,x])
+ filter_words_f %>% count(term, sort = T) %>% top_n(5) %>% ungroup() %>% mutate( term = reorder(term,n)) %>% ggplot() + geom_col(aes(term, n), fill = " light pink") + coord_flip()
+
+}
+
+grid.arrange(graph_f(1),graph_f(2),graph_f(3),graph_f(4),graph_f(5),graph_f(6),graph_f(7),graph_f(8),graph_f(9), ncol=3, nrow =3)
+```
+
+#### Male
+```{r, echo=FALSE,warning=FALSE}
+grid.arrange(graph_m(1),graph_m(2),graph_m(3),graph_m(4),graph_m(5),graph_m(6),graph_m(7),graph_m(8),graph_m(9), ncol=3, nrow =3)
+```
+
+
+From the top 5 words in each 9 selected topics, we can see that for each topic, 5 topic words are similar, like friends are both most frequently mentioned people. indicating the common part of the two parts. At the mean time, there are some slight differences: like for entertainment, women tend to like books other than movie, showing more preference on imagination in mind other than visual effects; for family, daughter and son brought more happiness to their mom than dad; office seems more important than promotion, showing men are more focusing on achievement.
+
+##Summary
+
+By analyzing the HappyDB data separating in two gender groups, we could conclude that men and women have a lot in common. Friend are both parts' focus and for each topic, things that making their happy are similar. Of course, the differences exist but not too obvious. Women are more subjective, family-related and slightly more expressive. Men link entertainment more to happiness.
